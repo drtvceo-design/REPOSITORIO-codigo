@@ -7,7 +7,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# Autenticación de Gemini
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -17,7 +16,6 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro')
 
-# Alcances: Lectura para Drive y Gmail
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/gmail.readonly'
@@ -32,7 +30,8 @@ def auth_google():
             try:
                 creds.refresh(Request())
             except Exception:
-                os.remove('token.json')
+                if os.path.exists('token.json'):
+                    os.remove('token.json')
                 flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
                 creds = flow.run_local_server(port=0)
         else:
@@ -44,7 +43,7 @@ def auth_google():
 
 def extraer_contexto_drive(creds):
     service = build('drive', 'v3', credentials=creds)
-    print("[SISTEMA] Escaneando tus últimos Google Docs...")
+    print("[SISTEMA] Escaneando documentos en Drive...")
     results = service.files().list(
         pageSize=3,
         q="mimeType='application/vnd.google-apps.document'",
@@ -58,15 +57,14 @@ def extraer_contexto_drive(creds):
         try:
             request = service.files().export_media(fileId=item['id'], mimeType='text/plain')
             texto = request.execute().decode('utf-8')
-            contexto += f"\n--- DOC DRIVE: {item['name']} ---\n{texto[:1500]}...\n" # Limitado a 1500 chars para no saturar
-        except Exception as e:
+            contexto += f"\n--- DOC DRIVE: {item['name']} ---\n{texto[:1500]}...\n"
+        except Exception:
             pass
     return contexto
 
 def extraer_contexto_gmail(creds):
     service = build('gmail', 'v1', credentials=creds)
-    print("[SISTEMA] Escaneando últimos correos en la bandeja de Drtvceo@gmail.com...")
-    # Busca los 3 correos más recientes en la bandeja principal
+    print("[SISTEMA] Escaneando bandeja de entrada de Drtvceo@gmail.com...")
     results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=3).execute()
     messages = results.get('messages', [])
     
@@ -92,28 +90,24 @@ def extraer_contexto_gmail(creds):
                 cuerpo = base64.urlsafe_bdecode(payload['body']['data']).decode('utf-8')
                 
             contexto += f"\n--- EMAIL RECIBIDO ---\nDe: {remitente}\nAsunto: {asunto}\nCuerpo: {cuerpo[:1000]}...\n"
-        except Exception as e:
+        except Exception:
             pass
     return contexto
 
 def main():
     try:
-        # 1. Autorización unificada
         creds = auth_google()
-        
-        # 2. Extracción de datos
         datos_drive = extraer_contexto_drive(creds)
         datos_gmail = extraer_contexto_gmail(creds)
         
         contexto_total = f"--- DATOS DE DRIVE ---\n{datos_drive}\n--- DATOS DE GMAIL ---\n{datos_gmail}"
         
         if not datos_drive.strip() and not datos_gmail.strip():
-            print("[SISTEMA] No hay contexto ni en Drive ni en Gmail.")
+            print("[SISTEMA] No hay contexto procesable en Drive ni en Gmail.")
             return
 
-        # 3. Inyección a Gemini
-        pregunta_usuario = "Realiza un análisis cruzado de la información más reciente de mis documentos y mis correos. Dame un resumen estratégico."
-        prompt_final = f"Este es el contexto extraído de mis cuentas:\n{contexto_total}\n\nInstrucción: {pregunta_usuario}"
+        pregunta_usuario = "Realiza un análisis cruzado basado estrictamente en la verdad material de mis documentos corporativos/legales y mis correos más recientes. Sintetiza la información estratégica aplicable a mi entorno."
+        prompt_final = f"Contexto extraído:\n{contexto_total}\n\nInstrucción: {pregunta_usuario}"
         
         print("\n[GEMINI] Analizando información dual (Drive + Gmail)...")
         respuesta = model.generate_content(prompt_final)
@@ -123,7 +117,7 @@ def main():
         print("\n====================================================\n")
         
     except Exception as e:
-        print(f"Error en la ejecución: {e}")
+        print(f"Error crítico en la ejecución: {e}")
 
 if __name__ == '__main__':
     main()
