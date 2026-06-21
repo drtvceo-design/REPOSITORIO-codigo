@@ -6,16 +6,17 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# 1. Autenticación de Gemini
+# Autenticación de Gemini
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("Falta GEMINI_API_KEY en el archivo .env")
+    print("ERROR CRÍTICO: Falta GEMINI_API_KEY en el archivo .env")
+    exit(1)
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-pro')
 
-# 2. Autenticación de Google Drive
+# Autenticación de Google Drive
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def auth_drive():
@@ -34,7 +35,6 @@ def auth_drive():
 
 def extraer_contexto_drive(service):
     print("[SISTEMA] Escaneando tus últimos Google Docs en Drive...")
-    # Busca los 3 documentos de Google Docs más recientes
     results = service.files().list(
         pageSize=3,
         q="mimeType='application/vnd.google-apps.document'",
@@ -48,7 +48,6 @@ def extraer_contexto_drive(service):
     for item in items:
         print(f"[EXTRACCIÓN] Leyendo: {item['name']}")
         try:
-            # Exporta el contenido del documento a texto plano
             request = service.files().export_media(fileId=item['id'], mimeType='text/plain')
             texto = request.execute().decode('utf-8')
             contexto += f"\n--- DOCUMENTO: {item['name']} ---\n{texto}\n"
@@ -59,7 +58,6 @@ def extraer_contexto_drive(service):
 
 def main():
     try:
-        # Conectar a Drive y extraer la información
         drive_service = auth_drive()
         contexto_base = extraer_contexto_drive(drive_service)
         
@@ -67,8 +65,7 @@ def main():
             print("[SISTEMA] No hay contexto en Drive. Crea un Google Doc primero.")
             return
 
-        # Consultar a Gemini con el contexto de tus documentos
-        pregunta_usuario = "¿Haz un resumen legal o estratégico basado en estos documentos?"
+        pregunta_usuario = "Realiza un resumen legal y estratégico detallado basado estrictamente en la verdad material de estos documentos."
         prompt_final = f"Este es el contexto extraído de mis archivos en Google Drive:\n{contexto_base}\n\nInstrucción: {pregunta_usuario}"
         
         print("\n[GEMINI] Analizando información...")
@@ -79,7 +76,7 @@ def main():
         print("\n====================================================\n")
         
     except Exception as e:
-        print(f"Error crítico en la ejecución: {e}")
+        print(f"Error en la ejecución: {e}")
 
 if __name__ == '__main__':
     main()
